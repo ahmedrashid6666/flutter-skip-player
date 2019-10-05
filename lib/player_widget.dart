@@ -1,9 +1,12 @@
 import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-
+import 'package:path/path.dart' as path;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'slider.dart';
+import 'silence.dart';
 
 class PlayerWidget extends StatefulWidget {
   final File file;
@@ -24,15 +27,36 @@ class _PlayerWidgetState extends State<PlayerWidget> {
   StreamSubscription _playerErrorSubscription;
   StreamSubscription _playerStateSubscription;
 
-  get _isPlaying => _playerState == AudioPlayerState.PLAYING;
-  get _isPaused => _playerState == AudioPlayerState.PAUSED;
-  get _durationText => _duration?.toString()?.split('.')?.first ?? '';
-  get _positionText => _position?.toString()?.split('.')?.first ?? '';
+  bool get _isPlaying => _playerState == AudioPlayerState.PLAYING;
+  bool get _isPaused => _playerState == AudioPlayerState.PAUSED;
+  String get _durationText => formatDuration(_duration);
+  String get _positionText => formatDuration(_position);
+  String formatDuration(Duration duration) => duration?.toString()?.split('.')?.first ?? '';
+
+  List<Silence> silences = [];
+  int get totalSilence => silences.fold(0, (total, silence) => total + silence.end - silence.start + 1);
+  double silencePercentage = 1.0;
+
+  // given the current position, if we must skip return the target position, otherwise return null
+  Duration targetPosition(Duration currentPosition) {
+    final cur = currentPosition.inSeconds;
+    for (var silence in silences) {
+      int silenceDuration = silence.end - silence.start + 1;
+      int playEnd = (silence.start + silenceDuration * silencePercentage).round();
+      if (cur >= playEnd && cur <= silence.end - 4) {
+        // skip to the end of the silence
+        return Duration(seconds: silence.end);
+      }
+    }
+    // don't skip
+    return null;
+  }
 
   @override
   void initState() {
     super.initState();
     _initAudioPlayer();
+    _readSilences();
   }
 
   @override
@@ -89,10 +113,16 @@ class _PlayerWidgetState extends State<PlayerWidget> {
             ),
           ],
         ),
-        Column(
-          mainAxisSize: MainAxisSize.min,
-          children: [
-            Slider(
+        SliderTheme(
+          data: Theme.of(context).sliderTheme.copyWith(
+                trackHeight: 30.0,
+                trackShape: SilenceSliderTrackShape(),
+                thumbShape: RectSliderThumbShape(),
+                thumbColor: Colors.blueGrey,
+              ),
+          child: SizedBox(
+            height: 100,
+            child: Slider(
               onChanged: (v) {
                 final position = v * _duration.inMilliseconds;
                 _audioPlayer.seek(Duration(milliseconds: position.round()));
@@ -101,14 +131,60 @@ class _PlayerWidgetState extends State<PlayerWidget> {
                   ? _position.inMilliseconds / _duration.inMilliseconds
                   : 0.0,
             ),
-            Text(
-              _position != null ? '${_positionText ?? ''} / ${_durationText ?? ''}' : _duration != null ? _durationText : '',
-              style: TextStyle(fontSize: 24.0),
-            ),
-          ],
+          ),
         ),
+        Text(
+          _position != null ? '${_positionText ?? ''} / ${_durationText ?? ''}' : _duration != null ? _durationText : '',
+          style: TextStyle(fontSize: 24.0),
+        ),
+        if (silences != null) ..._buildSilences(),
       ],
     );
+  }
+
+  List<Widget> _buildSilences() {
+    if (_duration != null && silences.isNotEmpty) {
+      Duration playDuration = _duration - Duration(seconds: (totalSilence * (1.0 - silencePercentage)).round());
+      Duration silenceDuration = Duration(seconds: (totalSilence * silencePercentage).round());
+      Duration totalSilenceDuration = Duration(seconds: totalSilence);
+
+      return [
+        SizedBox(
+          height: 30.0,
+        ),
+        Text("${silences.length} silences, ${formatDuration(silenceDuration)}s / ${formatDuration(totalSilenceDuration)}s "),
+        Text("total: ${formatDuration(playDuration)} / ${formatDuration(_duration)} "),
+        Slider(
+          onChanged: (v) {
+            setState(() {
+              silencePercentage = v;
+            });
+          },
+          value: silencePercentage,
+        ),
+      ];
+    } else {
+      return [];
+    }
+  }
+
+  int lastSeekTime = 0;
+
+  void _positionChanged(Duration p) {
+    final targetPos = targetPosition(p);
+    if (targetPos != null) {
+      int now = DateTime.now().millisecondsSinceEpoch;
+      if (!_isPlaying || now - lastSeekTime > 1000) {
+        print("seeking to : $targetPos");
+        //Future.delayed(Duration(seconds: 1), () =>
+        _audioPlayer.seek(targetPos);
+        lastSeekTime = now;
+      } else {
+        setState(() => _position = p);
+      }
+    } else {
+      setState(() => _position = p);
+    }
   }
 
   void _initAudioPlayer() {
@@ -119,7 +195,7 @@ class _PlayerWidgetState extends State<PlayerWidget> {
     });
 
     _positionSubscription = _audioPlayer.onAudioPositionChanged.listen((p) {
-      setState(() => _position = p);
+      _positionChanged(p);
     });
 
     _playerErrorSubscription = _audioPlayer.onPlayerError.listen((msg) {
@@ -135,13 +211,27 @@ class _PlayerWidgetState extends State<PlayerWidget> {
       if (!mounted) return;
       setState(() => _playerState = state);
     });
+
+    _audioPlayer.setUrl(widget.file.uri.toString());
+  }
+
+  void _readSilences() async {
+    List<Silence> result = List();
+    final silenceFile = File(path.withoutExtension(widget.file.path) + ".silence");
+    if (await silenceFile.exists()) {
+      List jsonSilenceList = jsonDecode(await silenceFile.readAsString());
+      for (var jsonSilence in jsonSilenceList) {
+        result.add(Silence.fromJson(jsonSilence));
+      }
+    }
+    setState(() => silences = result);
   }
 
   void _play() {
     final url = widget.file.uri.toString();
     final playPosition =
         (_position != null && _duration != null && _position.inMilliseconds > 0 && _position.inMilliseconds < _duration.inMilliseconds) ? _position : null;
-    _audioPlayer.play(url, isLocal: true, position: playPosition);
+    _audioPlayer.play(url, isLocal: true, position: playPosition, stayAwake: true);
   }
 
   void _skipBack() {

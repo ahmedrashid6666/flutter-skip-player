@@ -1,27 +1,88 @@
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:skip_player/player_widget.dart';
-import 'package:path_provider/path_provider.dart';
+//import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
+import 'package:simple_permissions/simple_permissions.dart';
 
 void main() => runApp(MyApp());
 
-class MyApp extends StatelessWidget {
+const String rootDir = "/storage/emulated/0/Audiobooks";
+
+class MyApp extends StatefulWidget {
+  @override
+  _MyAppState createState() => _MyAppState();
+}
+
+class _MyAppState extends State<MyApp> {
+  ValueNotifier<PermissionStatus> permissionNotifier = ValueNotifier(null);
+
+  @override
+  void initState() {
+    super.initState();
+    permissionNotifier.addListener(() => setState(() {}));
+  }
+
   @override
   Widget build(BuildContext context) {
     return MaterialApp(
       title: 'Skip Player',
       theme: ThemeData(primarySwatch: Colors.blue),
-      home: FolderPage(getExternalStorageDirectory(), isRoot: true),
+      home: FolderPage(Directory(rootDir + '/test'))
+      //home: permissionNotifier.value == PermissionStatus.authorized ? FolderPage(Directory(rootDir)) : PermissionPage(permissionNotifier),
     );
   }
 }
 
+class PermissionPage extends StatefulWidget {
+  final ValueNotifier<PermissionStatus> permissionNotifier;
+  PermissionPage(this.permissionNotifier);
+
+  @override
+  _PermissionPageState createState() => _PermissionPageState();
+}
+
+class _PermissionPageState extends State<PermissionPage> {
+  @override
+  void initState() {
+    super.initState();
+    _askPermission();
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return Scaffold(
+      appBar: AppBar(
+        title: Text("Permission Required"),
+      ),
+      body: Center(
+        child: Column(
+          children: [
+            Expanded(flex: 2, child: Container()),
+            Text("Permission is required to read storage."),
+            SizedBox(height: 10),
+            FlatButton(
+              color: Theme.of(context).buttonColor,
+              child: Text("Set Permission"),
+              onPressed: _askPermission,
+            ),
+            Expanded(flex: 3, child: Container()),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _askPermission() async {
+    widget.permissionNotifier.value = await SimplePermissions.requestPermission(Permission.ReadExternalStorage);
+  }
+}
+
 class FolderPage extends StatefulWidget {
-  final Future<Directory> directory;
-  final bool isRoot;
-  FolderPage(this.directory, {this.isRoot = false});
+  final Directory directory;
+  FolderPage(this.directory);
 
   _FolderPageState createState() => _FolderPageState();
 }
@@ -29,46 +90,39 @@ class FolderPage extends StatefulWidget {
 class _FolderPageState extends State<FolderPage> {
   @override
   Widget build(BuildContext context) {
-    return FutureBuilder<Directory>(
-      future: widget.directory,
-      builder: (BuildContext context, AsyncSnapshot<Directory> snapshot) {
-        if (snapshot.hasData) {
-          final dir = snapshot.data;
-          return Scaffold(
-            appBar: AppBar(title: Text(widget.isRoot ? "Skip Player" : path.basename(dir.path))),
-            body: _buildDirectoryList(dir),
-          );
-        } else if (snapshot.hasError) {
-          return Text(snapshot.error.toString());
-        } else {
-          return LoadingPage();
-        }
-      },
+    return Scaffold(
+      appBar: AppBar(title: Text(path.basename(widget.directory.path))),
+      body: _buildFileAndDirectoryList(widget.directory),
     );
   }
 
-  Widget _buildDirectoryList(Directory dir) {
+  Widget _buildFileAndDirectoryList(Directory dir) {
     return FutureBuilder<List<FileSystemEntity>>(
       future: _listContents(dir),
       builder: (BuildContext context, AsyncSnapshot<List<FileSystemEntity>> snapshot) {
         if (snapshot.hasData) {
+          bool showParent = false; //path.isWithin(rootDir, dir.path);
+
           final contents = _filterFiles(snapshot.data);
           return ListView.builder(
-            itemCount: contents.length,
-            itemBuilder: (context, i) {
+            itemCount: contents.length + (showParent ? 1 : 0),
+            itemBuilder: (context, index) {
+              int i = showParent ? index - 1 : index;
               return ListTile(
                 leading: Icon(
-                  _icon(contents[i]),
+                  i == -1 ? Icons.subdirectory_arrow_left : _icon(contents[i]),
                   size: 40,
                 ),
-                title: Text(path.basename(contents[i].path)),
+                title: Text(i == -1 ? "Parent Directory" : path.basename(contents[i].path)),
                 onTap: () {
-                  if (contents[i] is Directory) {
-                    Navigator.push(context, CupertinoPageRoute(builder: (context) => FolderPage(Future.value(contents[i] as Directory))));
+                  if (i == -1) {
+                    Navigator.push(context, CupertinoPageRoute(builder: (context) => FolderPage(Directory(dir.parent.path))));
+                  } else if (contents[i] is Directory) {
+                    Navigator.push(context, CupertinoPageRoute(builder: (context) => FolderPage(contents[i] as Directory)));
                   } else {
                     Navigator.push(context, MaterialPageRoute(builder: (context) {
                       return Scaffold(
-                          appBar: AppBar(title: Text("")),
+                          appBar: AppBar(title: Text(path.basename(contents[i].path))),
                           body: Column(
                             children: <Widget>[
                               Expanded(flex: 1, child: Container()),
@@ -83,7 +137,7 @@ class _FolderPageState extends State<FolderPage> {
             },
           );
         } else if (snapshot.hasError) {
-          return Text(snapshot.error.toString());
+          return ErrorWidget(snapshot.error.toString());
         } else {
           return LoadingPage();
         }
@@ -120,6 +174,19 @@ class LoadingPage extends StatelessWidget {
           child: CircularProgressIndicator(valueColor: AlwaysStoppedAnimation(Colors.red)),
         ),
       ),
+    );
+  }
+}
+
+class ErrorWidget extends StatelessWidget {
+  final String error;
+  const ErrorWidget(this.error);
+
+  @override
+  Widget build(BuildContext context) {
+    return SingleChildScrollView(
+      padding: const EdgeInsets.all(8.0),
+      child: Text(error, style: TextStyle(color: Theme.of(context).errorColor)),
     );
   }
 }
