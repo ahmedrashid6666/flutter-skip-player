@@ -1,9 +1,7 @@
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
 import 'package:skip_player/player_widget.dart';
-//import 'package:path_provider/path_provider.dart';
 import 'package:path/path.dart' as path;
 import 'package:simple_permissions/simple_permissions.dart';
 

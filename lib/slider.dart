@@ -1,5 +1,3 @@
-import 'dart:math' as math;
-
 import 'package:flutter/foundation.dart';
 import 'package:flutter/rendering.dart';
 import 'package:flutter/widgets.dart';
@@ -7,8 +5,10 @@ import 'package:flutter/material.dart';
 import 'silence.dart';
 
 class SilenceSliderTrackShape extends SliderTrackShape with BaseSliderTrackShape {
-  //final List<Silence> silences;
-  const SilenceSliderTrackShape();
+  final List<Silence> silences;
+  final Duration duration;
+  final double silencePercentage;
+  const SilenceSliderTrackShape(this.silences, this.duration, this.silencePercentage);
 
   @override
   void paint(
@@ -24,6 +24,8 @@ class SilenceSliderTrackShape extends SliderTrackShape with BaseSliderTrackShape
   }) {
     final Paint activePaint = Paint()..color = sliderTheme.activeTrackColor;
     final Paint inactivePaint = Paint()..color = sliderTheme.inactiveTrackColor;
+    final Paint silencePaint = Paint()..color = Colors.grey[200];
+    final Paint skippedPaint = Paint()..color = Colors.white;
 
     final Rect trackRect = getPreferredRect(
       parentBox: parentBox,
@@ -33,9 +35,21 @@ class SilenceSliderTrackShape extends SliderTrackShape with BaseSliderTrackShape
       isDiscrete: isDiscrete,
     );
 
-    context.canvas.drawRect(Rect.fromLTWH(trackRect.left, trackRect.top, thumbCenter.dx - trackRect.left, trackRect.height), activePaint);
     context.canvas.drawRect(Rect.fromLTWH(thumbCenter.dx, trackRect.top, trackRect.width - thumbCenter.dx + trackRect.left, trackRect.height), inactivePaint);
-    return;
+    for (var silence in silences) {
+      double fullSilenceDurationMs = (silence.end - silence.start).toDouble();
+      double silenceStart = trackRect.left + trackRect.width * silence.start / duration.inMilliseconds;
+      double fullSilenceWidth = (trackRect.width * fullSilenceDurationMs / duration.inMilliseconds);
+      double silenceWidth = fullSilenceWidth * silencePercentage /2;
+      double skippedStart = silenceStart + silenceWidth;
+      double skippedWidth = fullSilenceWidth * (1.0 - silencePercentage);
+
+      context.canvas.drawRect(Rect.fromLTWH(silenceStart, trackRect.top, silenceWidth, trackRect.height), silencePaint);
+      context.canvas.drawRect(Rect.fromLTWH(skippedStart, trackRect.top, skippedWidth, trackRect.height), skippedPaint);
+      context.canvas.drawRect(Rect.fromLTWH(skippedStart + skippedWidth, trackRect.top, silenceWidth, trackRect.height), silencePaint);
+    }
+
+    context.canvas.drawRect(Rect.fromLTWH(trackRect.left, trackRect.top, thumbCenter.dx - trackRect.left, trackRect.height), activePaint);
   }
 }
 

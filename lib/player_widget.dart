@@ -34,18 +34,22 @@ class _PlayerWidgetState extends State<PlayerWidget> {
   String formatDuration(Duration duration) => duration?.toString()?.split('.')?.first ?? '';
 
   List<Silence> silences = [];
-  int get totalSilence => silences.fold(0, (total, silence) => total + silence.end - silence.start + 1);
+  int get totalSilenceMs => silences.fold(0, (total, silence) => total + silence.end - silence.start);
   double silencePercentage = 1.0;
 
   // given the current position, if we must skip return the target position, otherwise return null
   Duration targetPosition(Duration currentPosition) {
-    final cur = currentPosition.inSeconds;
+    final cur = currentPosition.inMilliseconds;
     for (var silence in silences) {
-      int silenceDuration = silence.end - silence.start + 1;
-      int playEnd = (silence.start + silenceDuration * silencePercentage).round();
-      if (cur >= playEnd && cur <= silence.end - 4) {
+      int silenceDuration = silence.end - silence.start;
+      int skippedDuration = (silenceDuration * (1.0 - silencePercentage)).round();
+      int silenceMiddle = (silence.start + silenceDuration / 2).round();
+      int skippedStart = (silenceMiddle - skippedDuration / 2).round();
+      int skippedEnd = (silenceMiddle + skippedDuration / 2).round();
+
+      if (cur >= skippedStart && cur < skippedEnd) {
         // skip to the end of the silence
-        return Duration(seconds: silence.end);
+        return Duration(milliseconds: skippedEnd);
       }
     }
     // don't skip
@@ -116,7 +120,7 @@ class _PlayerWidgetState extends State<PlayerWidget> {
         SliderTheme(
           data: Theme.of(context).sliderTheme.copyWith(
                 trackHeight: 30.0,
-                trackShape: SilenceSliderTrackShape(),
+                trackShape: SilenceSliderTrackShape(silences, _duration, silencePercentage),
                 thumbShape: RectSliderThumbShape(),
                 thumbColor: Colors.blueGrey,
               ),
@@ -144,9 +148,9 @@ class _PlayerWidgetState extends State<PlayerWidget> {
 
   List<Widget> _buildSilences() {
     if (_duration != null && silences.isNotEmpty) {
-      Duration playDuration = _duration - Duration(seconds: (totalSilence * (1.0 - silencePercentage)).round());
-      Duration silenceDuration = Duration(seconds: (totalSilence * silencePercentage).round());
-      Duration totalSilenceDuration = Duration(seconds: totalSilence);
+      Duration playDuration = _duration - Duration(milliseconds: (totalSilenceMs * (1.0 - silencePercentage)).round());
+      Duration silenceDuration = Duration(milliseconds: (totalSilenceMs * silencePercentage).round());
+      Duration totalSilenceDuration = Duration(milliseconds: totalSilenceMs);
 
       return [
         SizedBox(
@@ -175,8 +179,6 @@ class _PlayerWidgetState extends State<PlayerWidget> {
     if (targetPos != null) {
       int now = DateTime.now().millisecondsSinceEpoch;
       if (!_isPlaying || now - lastSeekTime > 1000) {
-        print("seeking to : $targetPos");
-        //Future.delayed(Duration(seconds: 1), () =>
         _audioPlayer.seek(targetPos);
         lastSeekTime = now;
       } else {
