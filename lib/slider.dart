@@ -6,9 +6,10 @@ import 'silence.dart';
 
 class SilenceSliderTrackShape extends SliderTrackShape with BaseSliderTrackShape {
   final List<Silence> silences;
+  final List<Silence> playedSilences;
   final Duration duration;
   final double silencePercentage;
-  const SilenceSliderTrackShape(this.silences, this.duration, this.silencePercentage);
+  const SilenceSliderTrackShape(this.silences, this.playedSilences, this.duration, this.silencePercentage);
 
   @override
   void paint(
@@ -40,13 +41,20 @@ class SilenceSliderTrackShape extends SliderTrackShape with BaseSliderTrackShape
       double fullSilenceDurationMs = (silence.end - silence.start).toDouble();
       double silenceStart = trackRect.left + trackRect.width * silence.start / duration.inMilliseconds;
       double fullSilenceWidth = (trackRect.width * fullSilenceDurationMs / duration.inMilliseconds);
-      double silenceWidth = fullSilenceWidth * silencePercentage /2;
+      double silenceWidth = fullSilenceWidth * silencePercentage / 2;
       double skippedStart = silenceStart + silenceWidth;
       double skippedWidth = fullSilenceWidth * (1.0 - silencePercentage);
 
       context.canvas.drawRect(Rect.fromLTWH(silenceStart, trackRect.top, silenceWidth, trackRect.height), silencePaint);
       context.canvas.drawRect(Rect.fromLTWH(skippedStart, trackRect.top, skippedWidth, trackRect.height), skippedPaint);
       context.canvas.drawRect(Rect.fromLTWH(skippedStart + skippedWidth, trackRect.top, silenceWidth, trackRect.height), silencePaint);
+    }
+
+    for (var silence in playedSilences) {
+      double silenceStart = trackRect.left + trackRect.width * silence.start / duration.inMilliseconds;
+      double silenceDurationMs = (silence.end - silence.start).toDouble();
+      double silenceWidth = (trackRect.width * silenceDurationMs / duration.inMilliseconds);
+      context.canvas.drawRect(Rect.fromLTWH(silenceStart, trackRect.top, silenceWidth, trackRect.height), silencePaint);
     }
 
     context.canvas.drawRect(Rect.fromLTWH(trackRect.left, trackRect.top, thumbCenter.dx - trackRect.left, trackRect.height), activePaint);

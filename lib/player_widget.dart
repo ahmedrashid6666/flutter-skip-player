@@ -33,8 +33,14 @@ class _PlayerWidgetState extends State<PlayerWidget> {
   String get _positionText => formatDuration(_position);
   String formatDuration(Duration duration) => duration?.toString()?.split('.')?.first ?? '';
 
+  List<Silence> allSilences = [];
   List<Silence> silences = [];
-  int get totalSilenceMs => silences.fold(0, (total, silence) => total + silence.end - silence.start);
+  List<Silence> playedSilences = [];
+  int get playedSilenceMs => playedSilences.fold(0, (total, silence) => total + silence.end - silence.start);
+  int get silenceMs => silences.fold(0, (total, silence) => total + silence.end - silence.start);
+  int get allPlayedSilenceMs => playedSilenceMs + (silenceMs * silencePercentage).round();
+  int get skippedSilenceMs => (silenceMs * (1.0 - silencePercentage)).round();
+  int get totalSilenceMs => playedSilenceMs + silenceMs;
   double silencePercentage = 1.0;
 
   // given the current position, if we must skip return the target position, otherwise return null
@@ -120,7 +126,7 @@ class _PlayerWidgetState extends State<PlayerWidget> {
         SliderTheme(
           data: Theme.of(context).sliderTheme.copyWith(
                 trackHeight: 30.0,
-                trackShape: SilenceSliderTrackShape(silences, _duration, silencePercentage),
+                trackShape: SilenceSliderTrackShape(silences, playedSilences, _duration, silencePercentage),
                 thumbShape: RectSliderThumbShape(),
                 thumbColor: Colors.blueGrey,
               ),
@@ -147,17 +153,31 @@ class _PlayerWidgetState extends State<PlayerWidget> {
   }
 
   List<Widget> _buildSilences() {
-    if (_duration != null && silences.isNotEmpty) {
-      Duration playDuration = _duration - Duration(milliseconds: (totalSilenceMs * (1.0 - silencePercentage)).round());
-      Duration silenceDuration = Duration(milliseconds: (totalSilenceMs * silencePercentage).round());
+    if (_duration != null && allSilences.isNotEmpty) {
+      Duration playDuration = _duration - Duration(milliseconds: skippedSilenceMs);
+      Duration silenceDuration = Duration(milliseconds: allPlayedSilenceMs);
       Duration totalSilenceDuration = Duration(milliseconds: totalSilenceMs);
 
       return [
         SizedBox(
           height: 30.0,
         ),
-        Text("${silences.length} silences, ${formatDuration(silenceDuration)}s / ${formatDuration(totalSilenceDuration)}s "),
+        Text("${allSilences.length} silences, ${formatDuration(silenceDuration)}s / ${formatDuration(totalSilenceDuration)}s "),
         Text("total: ${formatDuration(playDuration)} / ${formatDuration(_duration)} "),
+        Slider(
+          min: 0,
+          max: allSilences.length.toDouble(),
+          divisions: allSilences.length,
+          onChanged: (n) {
+            setState(() {
+              List<Silence> sorted = List.from(allSilences);
+              sorted.sort((s1, s2) => (s1.end - s1.start).compareTo(s2.end - s2.start));
+              playedSilences = sorted.sublist(0, n.round());
+              silences = sorted.sublist(n.round());
+            });
+          },
+          value: playedSilences.length.toDouble(),
+        ),
         Slider(
           onChanged: (v) {
             setState(() {
@@ -226,7 +246,7 @@ class _PlayerWidgetState extends State<PlayerWidget> {
         result.add(Silence.fromJson(jsonSilence));
       }
     }
-    setState(() => silences = result);
+    setState(() => playedSilences = allSilences = result);
   }
 
   void _play() {
