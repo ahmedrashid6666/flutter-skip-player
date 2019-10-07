@@ -4,10 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:skip_player/player_widget.dart';
 import 'package:path/path.dart' as path;
 import 'package:permission_handler/permission_handler.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 void main() => runApp(MyApp());
 
-const String rootDir = "/storage/emulated/0/Audiobooks";
+const String rootDir = "/storage/emulated/0";
 
 class MyApp extends StatefulWidget {
   @override
@@ -28,8 +29,17 @@ class _MyAppState extends State<MyApp> {
     return MaterialApp(
       title: 'Skip Player',
       theme: ThemeData(primarySwatch: Colors.blue),
-      //home: FolderPage(Directory(rootDir + '/test'))
-      home: permissionNotifier.value == PermissionStatus.granted ? FolderPage(Directory(rootDir)) : PermissionPage(permissionNotifier),
+      home: permissionNotifier.value == PermissionStatus.granted ? 
+      FutureBuilder<SharedPreferences>(future: SharedPreferences.getInstance(), builder: (context, snapshot) {
+        if(snapshot.hasData) {
+          SharedPreferences prefs = snapshot.data;
+          final path = prefs.getString('path') ?? rootDir;
+          return FolderPage(Directory(path));
+        } else {
+          return CircularProgressIndicator();
+        }
+      })
+       : PermissionPage(permissionNotifier),
     );
   }
 }
@@ -90,7 +100,18 @@ class _FolderPageState extends State<FolderPage> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: Text(path.basename(widget.directory.path))),
+      appBar: AppBar(
+        title: Text(path.basename(widget.directory.path)),
+        actions: <Widget>[
+          IconButton(
+            icon: Icon(Icons.star),
+            onPressed: () async {
+              SharedPreferences prefs = await SharedPreferences.getInstance();
+              prefs.setString('path', widget.directory.path);
+            },
+          )
+        ],
+      ),
       body: _buildFileAndDirectoryList(widget.directory),
     );
   }
@@ -158,7 +179,11 @@ class _FolderPageState extends State<FolderPage> {
 
   List<FileSystemEntity> _filterFiles(List<FileSystemEntity> files) {
     // hide .silence files
-    return files.where((f) => path.extension(f.path).toLowerCase() != ".silence").toList();
+    return files.where((f) {
+      var name = path.basename(f.path);
+      var ext = path.extension(f.path).toLowerCase();
+      return ext != ".silence" && name != ".nomedia";
+    }).toList();
   }
 }
 
