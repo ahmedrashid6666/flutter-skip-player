@@ -3,7 +3,7 @@ import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
 import 'package:skip_player/player_widget.dart';
 import 'package:path/path.dart' as path;
-import 'package:simple_permissions/simple_permissions.dart';
+import 'package:permission_handler/permission_handler.dart';
 
 void main() => runApp(MyApp());
 
@@ -28,8 +28,8 @@ class _MyAppState extends State<MyApp> {
     return MaterialApp(
       title: 'Skip Player',
       theme: ThemeData(primarySwatch: Colors.blue),
-      home: FolderPage(Directory(rootDir + '/test'))
-      //home: permissionNotifier.value == PermissionStatus.authorized ? FolderPage(Directory(rootDir)) : PermissionPage(permissionNotifier),
+      //home: FolderPage(Directory(rootDir + '/test'))
+      home: permissionNotifier.value == PermissionStatus.granted ? FolderPage(Directory(rootDir)) : PermissionPage(permissionNotifier),
     );
   }
 }
@@ -74,7 +74,8 @@ class _PermissionPageState extends State<PermissionPage> {
   }
 
   void _askPermission() async {
-    widget.permissionNotifier.value = await SimplePermissions.requestPermission(Permission.ReadExternalStorage);
+    Map<PermissionGroup, PermissionStatus> permissions = await PermissionHandler().requestPermissions([PermissionGroup.storage]);
+    widget.permissionNotifier.value = permissions[PermissionGroup.storage];
   }
 }
 

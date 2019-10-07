@@ -26,7 +26,7 @@ dependencies:
 
   audioplayers: ^0.13.2
 
-  simple_permissions: ^0.1.9
+  permission_handler: ^3.2.2
 
   provider: ^3.1.0
 
