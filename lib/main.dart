@@ -1,6 +1,7 @@
 import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 import 'package:skip_player/player_widget.dart';
 import 'package:path/path.dart' as path;
 import 'package:permission_handler/permission_handler.dart';
@@ -17,30 +18,40 @@ class MyApp extends StatefulWidget {
 
 class _MyAppState extends State<MyApp> {
   ValueNotifier<PermissionStatus> permissionNotifier = ValueNotifier(null);
+  SharedPreferences prefs;
 
   @override
   void initState() {
-    super.initState();
     permissionNotifier.addListener(() => setState(() {}));
+    loadPrefs();
+    super.initState();
+  }
+
+  void loadPrefs() async {
+    final result = await SharedPreferences.getInstance();
+    setState(() => prefs = result);
   }
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp(
-      title: 'Skip Player',
-      theme: ThemeData(primarySwatch: Colors.blue),
-      home: permissionNotifier.value == PermissionStatus.granted ? 
-      FutureBuilder<SharedPreferences>(future: SharedPreferences.getInstance(), builder: (context, snapshot) {
-        if(snapshot.hasData) {
-          SharedPreferences prefs = snapshot.data;
-          final path = prefs.getString('path') ?? rootDir;
-          return FolderPage(Directory(path));
-        } else {
-          return CircularProgressIndicator();
-        }
-      })
-       : PermissionPage(permissionNotifier),
+    return MultiProvider(
+      providers: [
+        Provider<SharedPreferences>.value(value: prefs),
+      ],
+      child: MaterialApp(
+        title: 'Skip Player',
+        theme: ThemeData(primarySwatch: Colors.blue),
+        home: permissionNotifier.value == PermissionStatus.granted ? mainPage() : PermissionPage(permissionNotifier),
+      ),
     );
+  }
+
+  Widget mainPage() {
+    if (prefs == null) {
+      return CircularProgressIndicator();
+    }
+    final path = prefs.getString('path') ?? rootDir;
+    return FolderPage(Directory(path));
   }
 }
 
@@ -104,10 +115,19 @@ class _FolderPageState extends State<FolderPage> {
         title: Text(path.basename(widget.directory.path)),
         actions: <Widget>[
           IconButton(
-            icon: Icon(Icons.star),
+            icon: Icon(Provider.of<SharedPreferences>(context)?.getString('path') == widget.directory.path ? Icons.star : Icons.star_border),
             onPressed: () async {
-              SharedPreferences prefs = await SharedPreferences.getInstance();
-              prefs.setString('path', widget.directory.path);
+              final prefs = Provider.of<SharedPreferences>(context);
+              if (prefs != null) {
+                final existingPath = prefs.getString('path');
+                setState(() {
+                  if (existingPath == null) {
+                    prefs.setString('path', widget.directory.path);
+                  } else {
+                    prefs.remove('path');
+                  }
+                });
+              }
             },
           )
         ],
@@ -121,23 +141,21 @@ class _FolderPageState extends State<FolderPage> {
       future: _listContents(dir),
       builder: (BuildContext context, AsyncSnapshot<List<FileSystemEntity>> snapshot) {
         if (snapshot.hasData) {
-          bool showParent = false; //path.isWithin(rootDir, dir.path);
-
           final contents = _filterFiles(snapshot.data);
+          contents.sort(compareFilenames);
+          final prefs = Provider.of<SharedPreferences>(context);
           return ListView.builder(
-            itemCount: contents.length + (showParent ? 1 : 0),
-            itemBuilder: (context, index) {
-              int i = showParent ? index - 1 : index;
+            itemCount: contents.length,
+            itemBuilder: (context, i) {
+              final finished = prefs?.getBool(contents[i].path + ".finished") ?? false;
               return ListTile(
                 leading: Icon(
-                  i == -1 ? Icons.subdirectory_arrow_left : _icon(contents[i]),
+                  finished ? Icons.done : _icon(contents[i]),
                   size: 40,
                 ),
-                title: Text(i == -1 ? "Parent Directory" : path.basename(contents[i].path)),
+                title: Text(path.basename(contents[i].path)),
                 onTap: () {
-                  if (i == -1) {
-                    Navigator.push(context, CupertinoPageRoute(builder: (context) => FolderPage(Directory(dir.parent.path))));
-                  } else if (contents[i] is Directory) {
+                  if (contents[i] is Directory) {
                     Navigator.push(context, CupertinoPageRoute(builder: (context) => FolderPage(contents[i] as Directory)));
                   } else {
                     Navigator.push(context, MaterialPageRoute(builder: (context) {
@@ -171,7 +189,8 @@ class _FolderPageState extends State<FolderPage> {
     if (content is Directory) {
       return Icons.folder;
     }
-    if (path.extension(content.path).toLowerCase() == ".mp3") {
+    final ext = path.extension(content.path).toLowerCase();
+    if (ext == ".mp3" || ext == ".mp4") {
       return Icons.audiotrack;
     }
     return Icons.insert_drive_file;
@@ -184,6 +203,43 @@ class _FolderPageState extends State<FolderPage> {
       var ext = path.extension(f.path).toLowerCase();
       return ext != ".silence" && name != ".nomedia";
     }).toList();
+  }
+
+  int compareFilenames(FileSystemEntity a, FileSystemEntity b) {
+    final pathA = path.basename(a.path).toLowerCase();
+    final pathB = path.basename(b.path).toLowerCase();
+    RegExp exp = new RegExp(r"(\D+)|(\d+)");
+    final matchesA = exp.allMatches(pathA).toList();
+    final matchesB = exp.allMatches(pathB).toList();
+    for (int i = 0; i < matchesA.length && i < matchesB.length; i++) {
+      final matchA = matchesA[i];
+      final matchB = matchesB[i];
+      final aChars = matchA.group(1);
+      final aNums = matchA.group(2);
+      final bChars = matchB.group(1);
+      final bNums = matchB.group(2);
+
+      if (aChars == null && bChars != null) {
+        return -1;
+      }
+      if (aChars != null && bChars == null) {
+        return 1;
+      }
+
+      if (aChars != null && bChars != null) {
+        int result = aChars.compareTo(bChars);
+        if (result != 0) {
+          return result;
+        }
+      }
+      if (aNums != null && bNums != null) {
+        int result = int.parse(aNums).compareTo(int.parse(bNums));
+        if (result != 0) {
+          return result;
+        }
+      }
+    }
+    return 0;
   }
 }
 

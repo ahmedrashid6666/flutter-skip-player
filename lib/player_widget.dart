@@ -5,6 +5,8 @@ import 'dart:math' as math;
 import 'package:path/path.dart' as path;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 import 'slider.dart';
 import 'silence.dart';
 
@@ -81,6 +83,9 @@ class _PlayerWidgetState extends State<PlayerWidget> {
 
   @override
   Widget build(BuildContext context) {
+    final prefs = Provider.of<SharedPreferences>(context);
+    final finished = prefs?.getBool(widget.file.path + ".finished") ?? false;
+
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
@@ -148,6 +153,22 @@ class _PlayerWidgetState extends State<PlayerWidget> {
           style: TextStyle(fontSize: 24.0),
         ),
         if (silences != null) ..._buildSilences(),
+        SizedBox(
+          height: 10,
+        ),
+        Container(
+          decoration: BoxDecoration(shape: BoxShape.circle, color: finished ? Colors.green[100] : Colors.grey[300]),
+          child: IconButton(
+              icon: Icon(Icons.done),
+              color: finished ? Colors.green[400] : Colors.grey[400],
+              iconSize: 50,
+              onPressed: () {
+                final prefs = Provider.of<SharedPreferences>(context);
+                setState(() {
+                  prefs.setBool(widget.file.path + ".finished", !finished);
+                });
+              }),
+        ),
       ],
     );
   }
