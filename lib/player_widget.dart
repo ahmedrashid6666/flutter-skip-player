@@ -145,7 +145,7 @@ class _PlayerWidgetState extends State<PlayerWidget> {
         SliderTheme(
           data: Theme.of(context).sliderTheme.copyWith(
                 trackHeight: 30.0,
-                trackShape: SilenceSliderTrackShape(silences, playedSilences, _duration, silencePercentage),
+                trackShape: SilenceSliderTrackShape(silences, playedSilences, _duration, silencePercentage, Theme.of(context).scaffoldBackgroundColor),
                 thumbShape: RectSliderThumbShape(),
                 thumbColor: Colors.blueGrey,
               ),

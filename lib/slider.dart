@@ -9,7 +9,8 @@ class SilenceSliderTrackShape extends SliderTrackShape with BaseSliderTrackShape
   final List<Silence> playedSilences;
   final Duration duration;
   final double silencePercentage;
-  const SilenceSliderTrackShape(this.silences, this.playedSilences, this.duration, this.silencePercentage);
+  final Color backgroundColor;
+  const SilenceSliderTrackShape(this.silences, this.playedSilences, this.duration, this.silencePercentage, this.backgroundColor);
 
   @override
   void paint(
@@ -25,8 +26,8 @@ class SilenceSliderTrackShape extends SliderTrackShape with BaseSliderTrackShape
   }) {
     final Paint activePaint = Paint()..color = sliderTheme.activeTrackColor;
     final Paint inactivePaint = Paint()..color = sliderTheme.inactiveTrackColor;
-    final Paint silencePaint = Paint()..color = Colors.grey[200];
-    final Paint skippedPaint = Paint()..color = Colors.white;
+    final Paint silencePaint = Paint()..color = sliderTheme.disabledInactiveTrackColor;
+    final Paint skippedPaint = Paint()..color = backgroundColor;
 
     final Rect trackRect = getPreferredRect(
       parentBox: parentBox,
