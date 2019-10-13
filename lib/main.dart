@@ -151,7 +151,7 @@ class _FolderPageState extends State<FolderPage> {
               if (prefs != null) {
                 final existingPath = prefs.getString('path');
                 setState(() {
-                  if (existingPath == null) {
+                  if (existingPath != widget.directory.path) {
                     prefs.setString('path', widget.directory.path);
                   } else {
                     prefs.remove('path');
@@ -194,15 +194,10 @@ class _FolderPageState extends State<FolderPage> {
                   } else {
                     Navigator.push(context, MaterialPageRoute(builder: (context) {
                       return Scaffold(
-                          appBar: AppBar(title: Text(path.basename(_contents[i].path))),
-                          endDrawer: Drawer(child: SettingsDrawer()),
-                          body: Column(
-                            children: <Widget>[
-                              Expanded(flex: 1, child: Container()),
-                              PlayerWidget(_contents[i]),
-                              Expanded(flex: 2, child: Container()),
-                            ],
-                          ));
+                        appBar: AppBar(title: Text(path.basename(_contents[i].path))),
+                        endDrawer: Drawer(child: SettingsDrawer()),
+                        body: PlayerWidget(_contents[i]),
+                      );
                     }));
                   }
                 },

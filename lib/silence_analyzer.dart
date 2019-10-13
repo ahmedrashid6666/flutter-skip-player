@@ -1,4 +1,7 @@
+import 'dart:async';
+import 'dart:convert';
 import 'dart:io';
+import 'dart:isolate';
 import 'dart:math' as math;
 import 'dart:typed_data';
 
@@ -13,36 +16,76 @@ class AnalysisException implements Exception {
   String toString() => message == null ? "AnalysisException" : "AnalysisException\n$message";
 }
 
+typedef ProgressCallback = void Function(double progress);
+
+class AnalyzerParams {
+  String tempDirPath;
+  double silenceThresholdDecibel;
+  int silenceThresholdMs;
+  SendPort sendResultPort;
+  SendPort sendProgressPort;
+  double bitrate;
+  String rawAudioTempFilePath;
+  AnalyzerParams({
+    this.tempDirPath,
+    this.silenceThresholdDecibel,
+    this.silenceThresholdMs,
+    this.sendResultPort,
+    this.sendProgressPort,
+    this.bitrate,
+    this.rawAudioTempFilePath,
+  });
+}
+
 /// Analyzes the given audio file and returns the list of silence ranges found in it.
+/// [audioFilePath] the audio file to analyze
 /// [tempDirPath] is a directory in which the decoded raw version of the audio file will be written.
-/// [silenceAmplitudeThreshold] the negative decibel level below which silence is detected,
+/// [silenceThresholdDecibel] the negative decibel level below which silence is detected
+/// [silenceThresholdMs] the minimum duration to register as silence in milliseconds
+/// [progressCallback] a function that will be called with a progress percentage in the [0-100] interval
 Future<List<Silence>> analyzeSilences(
-    {@required String audioFilePath, @required String tempDirPath, double silenceThresholdDecibel = -30, int silenceThresholdMs = 1000}) async {
+    {@required String audioFilePath,
+    @required String tempDirPath,
+    double silenceThresholdDecibel = -30,
+    int silenceThresholdMs = 1000,
+    ProgressCallback progressCallback}) async {
   assert(silenceThresholdDecibel < 0);
   assert(silenceThresholdMs > 0);
 
-  final silences = List<Silence>();
-  String tempFilePath = path.join(tempDirPath, path.basename(audioFilePath) + ".raw");
+  final ffmpeg = FlutterFFmpeg();
+  final RegExp _durationRegex = RegExp(r"Duration:\s*(\d+):(\d+):(\d+)\.(\d+)");
+  final RegExp _progressRegex = RegExp(r"time=(\d+):(\d+):(\d+)\.(\d+) bitrate=");
+  StreamController<String> streamController;
+  if (progressCallback != null) {
+    streamController = StreamController<String>();
+    Duration pos, dur;
 
-  // min and max values for a signed 16 bits int
-  const minValue = -32768;
-  const maxValue = 32767;
-  const maxAmplitude = maxValue - minValue;
-
-  // cf https://en.wikipedia.org/wiki/Decibel
-  int silenceAmplitudeThreshold = (maxAmplitude * math.sqrt(math.pow(10, silenceThresholdDecibel / 10))).toInt();
+    // parse ffmpeg log line by line to determine duration and progress
+    streamController.stream.transform(const LineSplitter()).listen((line) {
+      // print(line);
+      dur ??= _durationFromMatch(_durationRegex.firstMatch(line));
+      pos = _durationFromMatch(_progressRegex.firstMatch(line));
+      if (dur != null && pos != null) {
+        print("ffmpeg pos: $pos / $dur  (${(pos.inMilliseconds / dur.inMilliseconds * 100.0).toStringAsFixed(2)}%)");
+        progressCallback?.call((pos.inMilliseconds / dur.inMilliseconds) * 0.4);
+      }
+    });
+    // redirect ffmpeg log to a stream that emits full lines for easy parsing
+    ffmpeg.enableLogCallback((level, string) {
+      streamController.add(string);
+    });
+  }
 
   // convert the MP3 to mono raw audio samples (s16le = PCM signed 16-bit little-endian)
   // cf https://trac.ffmpeg.org/wiki/audio%20types
-  final ffmpeg = FlutterFFmpeg();
-  // ffmpeg.enableLogCallback((level, string) => print("[$level]$string"));
+  // (on the main thread since native calls only work from the main thread)
+  String tempFilePath = path.join(tempDirPath, path.basename(audioFilePath) + ".pcm_s16le");
   var arguments = ["-y", "-i", audioFilePath, "-f", "s16le", "-ac", "1", "-c:a", "pcm_s16le", tempFilePath];
-  print("ffmpeg $arguments");
   int rc = await ffmpeg.executeWithArguments(arguments);
   var output = await ffmpeg.getLastCommandOutput();
   var stats = await ffmpeg.getLastReceivedStatistics();
+  streamController?.close();
 
-  print("ffmpeg exited with code $rc");
   if (rc != 0) {
     throw AnalysisException("ffmpeg exited with error code $rc:\n$output");
   }
@@ -50,18 +93,78 @@ Future<List<Silence>> analyzeSilences(
   // kbits / sample
   double bitrate = stats["bitrate"];
 
+  ReceivePort receiveResultPort = ReceivePort();
+  ReceivePort receiveProgressPort = ReceivePort();
+
+  final params = AnalyzerParams(
+    tempDirPath: tempDirPath,
+    silenceThresholdDecibel: silenceThresholdDecibel,
+    silenceThresholdMs: silenceThresholdMs,
+    sendResultPort: receiveResultPort.sendPort,
+    sendProgressPort: progressCallback != null ? receiveProgressPort.sendPort : null,
+    bitrate: bitrate,
+    rawAudioTempFilePath: tempFilePath,
+  );
+
+  if (progressCallback != null) {
+    receiveProgressPort.listen((progress) {
+      progressCallback.call(progress);
+    });
+  }
+
+  final completer = Completer<List<Silence>>();
+  receiveResultPort.listen((silences) {
+    completer.complete(silences);
+  });
+
+  final isolate = await Isolate.spawn(_doAnalyzeSilences, params, debugName: "silence_analyzer");
+  final result = await completer.future;
+  progressCallback?.call(null);
+  receiveResultPort.close();
+  receiveProgressPort.close();
+  isolate.kill();
+
+  return result;
+}
+
+Duration _durationFromMatch(RegExpMatch match) {
+  if (match != null) {
+    return Duration(
+      hours: int.parse(match.group(1)),
+      minutes: int.parse(match.group(2)),
+      seconds: int.parse(match.group(3)),
+      milliseconds: int.parse(match.group(4)),
+    );
+  }
+  return null;
+}
+
+void _doAnalyzeSilences(AnalyzerParams analyzerParams) async {
+  final progressPort = analyzerParams.sendProgressPort;
+
+  final silences = List<Silence>();
+
+  // min and max values for a signed 16 bits int
+  const minValue = -32768;
+  const maxValue = 32767;
+  const maxAmplitude = maxValue - minValue;
+
+  // cf https://en.wikipedia.org/wiki/Decibel
+  int silenceAmplitudeThreshold = (maxAmplitude * math.sqrt(math.pow(10, analyzerParams.silenceThresholdDecibel / 10))).toInt();
+
   // number of samples (16 bits each) per second
-  int samplesPerSecond = bitrate * 1000.0 ~/ 16;
+  int samplesPerSecond = analyzerParams.bitrate * 1000.0 ~/ 16;
 
-  var bytes = await new File(tempFilePath).readAsBytes();
-  int durationMs = bytes.length * 8 ~/ bitrate;
+  var bytes = await new File(analyzerParams.rawAudioTempFilePath).readAsBytes();
+  File(analyzerParams.rawAudioTempFilePath).delete();
 
-  var dur = Duration(milliseconds: durationMs);
-  print(dur);
+  //int durationMs = bytes.length * 8 ~/ analyzerParams.bitrate;
+  //var dur = Duration(milliseconds: durationMs);
+  //print(dur);
 
-  int time = stats["time"];
-  var dur2 = Duration(milliseconds: time);
-  print(dur2);
+  // int time = stats["time"];
+  // var dur2 = Duration(milliseconds: time);
+  // print(dur2);
 
   int window = samplesPerSecond ~/ 100;
 
@@ -82,8 +185,12 @@ Future<List<Silence>> analyzeSilences(
     if (nSample % window == 0) {
       int amplitude = max - min;
       if (nSample % samplesPerSecond == 0) {
-        var pos = Duration(milliseconds: nSample * 1000 ~/ samplesPerSecond);
-        print("[$pos] $amplitude");
+        if (progressPort != null) {
+          double progress = 0.4 + (i / bytes.length) * 0.6;
+          progressPort.send(progress);
+        }
+        // var pos = Duration(milliseconds: nSample * 1000 ~/ samplesPerSecond);
+        // print("[$pos] $amplitude");
       }
       if (amplitude < silenceAmplitudeThreshold && silenceStartMs == -1) {
         silenceStartMs = nSample * 1000 ~/ samplesPerSecond;
@@ -94,7 +201,7 @@ Future<List<Silence>> analyzeSilences(
         int silenceEndMs = nSample * 1000 ~/ samplesPerSecond;
         //print("end:   $silenceEndMs");
 
-        if (silenceEndMs - silenceStartMs > silenceThresholdMs) {
+        if (silenceEndMs - silenceStartMs > analyzerParams.silenceThresholdMs) {
           final silence = Silence(silenceStartMs, silenceEndMs);
           print(silence);
           silences.add(silence);
@@ -109,6 +216,6 @@ Future<List<Silence>> analyzeSilences(
     nSample++;
   }
 
-  print('done.');
-  return silences;
+  print('silence analysis done.');
+  analyzerParams.sendResultPort.send(silences);
 }

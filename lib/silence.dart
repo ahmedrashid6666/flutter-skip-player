@@ -6,6 +6,13 @@ class Silence {
   Silence.fromJson(Map<String, dynamic> json)
       : start = json['start'],
         end = json['end'];
+
+  Map<String, int> toJson() {
+    final json = Map<String, int>();
+    json['start'] = start;
+    json['end'] = end;
+    return json;
+  }
   
   @override
   String toString() {

@@ -25,6 +25,7 @@ class _PlayerWidgetState extends State<PlayerWidget> {
   AudioPlayerState _playerState;
   Duration _duration;
   Duration _position;
+  double analysisProgress;
 
   StreamSubscription _durationSubscription;
   StreamSubscription _positionSubscription;
@@ -46,6 +47,7 @@ class _PlayerWidgetState extends State<PlayerWidget> {
   int get skippedSilenceMs => (silenceMs * (1.0 - silencePercentage)).round();
   int get totalSilenceMs => playedSilenceMs + silenceMs;
   double silencePercentage = 1.0;
+  String get silenceFilePath => path.withoutExtension(widget.file.path) + ".silence";
 
   // given the current position, if we must skip return the target position, otherwise return null
   Duration targetPosition(Duration currentPosition) {
@@ -70,6 +72,7 @@ class _PlayerWidgetState extends State<PlayerWidget> {
   void initState() {
     super.initState();
     _initAudioPlayer();
+    _readSilences();
   }
 
   @override
@@ -90,16 +93,16 @@ class _PlayerWidgetState extends State<PlayerWidget> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
-        RaisedButton(
-          child: Text("Read Silences"),
-          onPressed: _readSilences,
-          color: Theme.of(context).buttonColor,
-        ),
-        RaisedButton(
-          child: Text("Compute Silences"),
-          onPressed: _readSilences2,
-          color: Theme.of(context).buttonColor,
-        ),
+        if (analysisProgress != null)
+          LinearProgressIndicator(
+            value: analysisProgress,
+          ),
+        Expanded(flex: 1, child: Container()),
+        // RaisedButton(
+        //   child: Text("Compute Silences"),
+        //   onPressed: _readSilences,
+        //   color: Theme.of(context).buttonColor,
+        // ),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -163,7 +166,9 @@ class _PlayerWidgetState extends State<PlayerWidget> {
           _position != null ? '${_positionText ?? ''} / ${_durationText ?? ''}' : _duration != null ? _durationText : '',
           style: TextStyle(fontSize: 24.0),
         ),
-        if (silences != null) ..._buildSilences(),
+        Expanded(flex: 2, child: Container()),
+        if (silences != null)
+          ..._buildSilences(),
         SizedBox(
           height: 10,
         ),
@@ -180,6 +185,7 @@ class _PlayerWidgetState extends State<PlayerWidget> {
                 });
               }),
         ),
+        Expanded(flex: 1, child: Container()),
       ],
     );
   }
@@ -270,22 +276,40 @@ class _PlayerWidgetState extends State<PlayerWidget> {
   }
 
   void _readSilences() async {
-    List<Silence> result = List();
-    final silenceFile = File(path.withoutExtension(widget.file.path) + ".silence");
-    if (await silenceFile.exists()) {
+    List<Silence> result;
+    final silenceFile = File(silenceFilePath);
+    if (false && await silenceFile.exists()) {
+      result = List();
       List jsonSilenceList = jsonDecode(await silenceFile.readAsString());
       for (var jsonSilence in jsonSilenceList) {
         result.add(Silence.fromJson(jsonSilence));
       }
+    } else {
+      Directory tempDir = await pathprovider.getTemporaryDirectory();
+      try {
+        result = await analyzeSilences(
+            audioFilePath: widget.file.path,
+            tempDirPath: tempDir.path,
+            silenceThresholdDecibel: -30,
+            silenceThresholdMs: 5000,
+            progressCallback: (p) {
+              setState(() {
+                analysisProgress = p;
+              });
+            });
+        setState(() {
+          playedSilences = allSilences = result;
+        });
+      } catch (e) {
+        _showErrorDialog(e);
+      }
+      final json = jsonEncode(silences);
+      // TODO save silences
+      // silenceFile.writeAsString(json);
     }
-    setState(() => playedSilences = allSilences = result);
   }
 
-  void _readSilences2() async {
-    Directory tempDir = await pathprovider.getTemporaryDirectory();
-    List<Silence> silences = await analyzeSilences(audioFilePath: widget.file.path, tempDirPath: tempDir.path, silenceThresholdDecibel: -20, silenceThresholdMs: 5000);
-    setState(() => playedSilences = allSilences = silences);
-  }
+  
 
   void _play() {
     final url = widget.file.uri.toString();
@@ -302,5 +326,17 @@ class _PlayerWidgetState extends State<PlayerWidget> {
   void _skipForward() {
     final newPosition = math.min(_position.inMilliseconds + 5000.0, _duration.inMilliseconds);
     _audioPlayer.seek(Duration(milliseconds: newPosition.round()));
+  }
+
+  void _showErrorDialog(e) {
+    showDialog(
+      context: context,
+      builder: (context) {
+        return AlertDialog(
+          title: Text("Error"),
+          content: SingleChildScrollView(child: Text(e.toString())),
+        );
+      },
+    );
   }
 }
