@@ -2,11 +2,13 @@ import 'dart:async';
 import 'dart:convert';
 import 'dart:io';
 import 'dart:math' as math;
-import 'package:path/path.dart' as path;
 import 'package:audioplayers/audioplayers.dart';
 import 'package:flutter/material.dart';
+import 'package:path/path.dart' as path;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
+import 'package:path_provider/path_provider.dart' as pathprovider;
+import 'package:skip_player/silence_analyzer.dart';
 import 'slider.dart';
 import 'silence.dart';
 
@@ -68,7 +70,6 @@ class _PlayerWidgetState extends State<PlayerWidget> {
   void initState() {
     super.initState();
     _initAudioPlayer();
-    _readSilences();
   }
 
   @override
@@ -89,6 +90,16 @@ class _PlayerWidgetState extends State<PlayerWidget> {
     return Column(
       mainAxisSize: MainAxisSize.min,
       children: <Widget>[
+        RaisedButton(
+          child: Text("Read Silences"),
+          onPressed: _readSilences,
+          color: Theme.of(context).buttonColor,
+        ),
+        RaisedButton(
+          child: Text("Compute Silences"),
+          onPressed: _readSilences2,
+          color: Theme.of(context).buttonColor,
+        ),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
@@ -268,6 +279,12 @@ class _PlayerWidgetState extends State<PlayerWidget> {
       }
     }
     setState(() => playedSilences = allSilences = result);
+  }
+
+  void _readSilences2() async {
+    Directory tempDir = await pathprovider.getTemporaryDirectory();
+    List<Silence> silences = await analyzeSilences(audioFilePath: widget.file.path, tempDirPath: tempDir.path, silenceThresholdDecibel: -20, silenceThresholdMs: 5000);
+    setState(() => playedSilences = allSilences = silences);
   }
 
   void _play() {

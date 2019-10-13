@@ -9,6 +9,10 @@ class Silence {
   
   @override
   String toString() {
-    return "Silence[$start-$end]";
+    final strStart = Duration(milliseconds: start).toString();
+    final strEnd = Duration(milliseconds: end).toString();
+    final strLength = Duration(milliseconds: end - start).toString();
+    return "Silence[$strStart - $strEnd : $strLength]";
+    //return "Silence[$start - $end]";
   }
 }
