@@ -89,48 +89,49 @@ class _PlayerWidgetState extends State<PlayerWidget> {
   Widget build(BuildContext context) {
     final prefs = Provider.of<SharedPreferences>(context);
     final finished = prefs?.getBool(widget.file.path + ".finished") ?? false;
+    const buttonPadding = EdgeInsets.symmetric(horizontal: 8, vertical: 6);
 
     return Column(
       mainAxisSize: MainAxisSize.min,
-      children: <Widget>[
+      children: [
         if (analysisProgress != null)
           LinearProgressIndicator(
             value: analysisProgress,
           ),
-        Expanded(flex: 1, child: Container()),
-        // RaisedButton(
-        //   child: Text("Compute Silences"),
-        //   onPressed: _readSilences,
-        //   color: Theme.of(context).buttonColor,
-        // ),
+        Expanded(flex: 10, child: Container()),
         Row(
           mainAxisSize: MainAxisSize.min,
           children: [
             IconButton(
+              padding: buttonPadding,
               onPressed: _skipBack,
               iconSize: 45.0,
               icon: Icon(Icons.settings_backup_restore),
               color: Colors.blue,
             ),
             IconButton(
+              padding: buttonPadding,
               onPressed: _isPlaying ? null : _play,
               iconSize: 64.0,
               icon: Icon(Icons.play_arrow),
               color: Colors.blue,
             ),
             IconButton(
+              padding: buttonPadding,
               onPressed: _isPlaying ? _audioPlayer.pause : null,
               iconSize: 64.0,
               icon: Icon(Icons.pause),
               color: Colors.blue,
             ),
             IconButton(
+              padding: buttonPadding,
               onPressed: _isPlaying || _isPaused ? _audioPlayer.stop : null,
               iconSize: 64.0,
               icon: Icon(Icons.stop),
               color: Colors.blue,
             ),
             IconButton(
+              padding: buttonPadding,
               onPressed: _skipForward,
               iconSize: 45.0,
               icon: Transform(
@@ -142,15 +143,15 @@ class _PlayerWidgetState extends State<PlayerWidget> {
             ),
           ],
         ),
-        SliderTheme(
-          data: Theme.of(context).sliderTheme.copyWith(
-                trackHeight: 30.0,
-                trackShape: SilenceSliderTrackShape(silences, playedSilences, _duration, silencePercentage, Theme.of(context).scaffoldBackgroundColor),
-                thumbShape: RectSliderThumbShape(),
-                thumbColor: Colors.blueGrey,
-              ),
-          child: SizedBox(
-            height: 100,
+        SizedBox(
+          height: 30,
+          child: SliderTheme(
+            data: Theme.of(context).sliderTheme.copyWith(
+                  trackHeight: 30.0,
+                  trackShape: SilenceSliderTrackShape(silences, playedSilences, _duration, silencePercentage, Theme.of(context).scaffoldBackgroundColor),
+                  thumbShape: RectSliderThumbShape(),
+                  thumbColor: Colors.blueGrey,
+                ),
             child: Slider(
               onChanged: (v) {
                 final position = v * _duration.inMilliseconds;
@@ -162,28 +163,45 @@ class _PlayerWidgetState extends State<PlayerWidget> {
             ),
           ),
         ),
+        SizedBox(height: 4),
+        Expanded(flex: 1, child: Container()),
         Text(
           _position != null ? '${_positionText ?? ''} / ${_durationText ?? ''}' : _duration != null ? _durationText : '',
           style: TextStyle(fontSize: 24.0),
         ),
-        Expanded(flex: 2, child: Container()),
-        if (silences != null)
-          ..._buildSilences(),
-        SizedBox(
-          height: 10,
-        ),
-        Container(
-          decoration: BoxDecoration(shape: BoxShape.circle, color: finished ? Colors.green[100] : Colors.grey[300]),
-          child: IconButton(
-              icon: Icon(Icons.done),
-              color: finished ? Colors.green[400] : Colors.grey[400],
-              iconSize: 50,
-              onPressed: () {
-                final prefs = Provider.of<SharedPreferences>(context);
+        Expanded(flex: 5, child: Container()),
+        if (silences != null) ..._buildSilences(),
+        Expanded(flex: 1, child: Container()),
+        Row(
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          children: <Widget>[
+            FlatButton(
+              child: Text("Recompute Silences"),
+              onPressed: () async {
+                final silenceFile = File(silenceFilePath);
                 setState(() {
-                  prefs.setBool(widget.file.path + ".finished", !finished);
+                  playedSilences = allSilences = List();
                 });
-              }),
+                await silenceFile.delete();
+                _readSilences();
+              },
+              color: Theme.of(context).buttonColor,
+            ),
+            Container(
+              decoration: BoxDecoration(shape: BoxShape.circle, color: finished ? Colors.green[100] : Theme.of(context).buttonColor),
+              child: IconButton(
+                icon: Icon(Icons.done),
+                color: finished ? Colors.green[400] : Theme.of(context).disabledColor,
+                iconSize: 32,
+                onPressed: () {
+                  final prefs = Provider.of<SharedPreferences>(context);
+                  setState(() {
+                    prefs.setBool(widget.file.path + ".finished", !finished);
+                  });
+                },
+              ),
+            ),
+          ],
         ),
         Expanded(flex: 1, child: Container()),
       ],
@@ -197,9 +215,7 @@ class _PlayerWidgetState extends State<PlayerWidget> {
       Duration totalSilenceDuration = Duration(milliseconds: totalSilenceMs);
 
       return [
-        SizedBox(
-          height: 30.0,
-        ),
+        Expanded(flex: 1, child: Container()),
         Text("${allSilences.length} silences, ${formatDuration(silenceDuration)}s / ${formatDuration(totalSilenceDuration)}s "),
         Text("total: ${formatDuration(playDuration)} / ${formatDuration(_duration)} "),
         Slider(
@@ -278,7 +294,7 @@ class _PlayerWidgetState extends State<PlayerWidget> {
   void _readSilences() async {
     List<Silence> result;
     final silenceFile = File(silenceFilePath);
-    if (false && await silenceFile.exists()) {
+    if (await silenceFile.exists()) {
       result = List();
       List jsonSilenceList = jsonDecode(await silenceFile.readAsString());
       for (var jsonSilence in jsonSilenceList) {
@@ -297,19 +313,18 @@ class _PlayerWidgetState extends State<PlayerWidget> {
                 analysisProgress = p;
               });
             });
-        setState(() {
-          playedSilences = allSilences = result;
-        });
       } catch (e) {
         _showErrorDialog(e);
       }
-      final json = jsonEncode(silences);
-      // TODO save silences
-      // silenceFile.writeAsString(json);
+      final json = jsonEncode(result);
+      silenceFile.writeAsString(json);
+    }
+    if (result != null) {
+      setState(() {
+        playedSilences = allSilences = result;
+      });
     }
   }
-
-  
 
   void _play() {
     final url = widget.file.uri.toString();

@@ -178,31 +178,38 @@ class _FolderPageState extends State<FolderPage> {
         if (snapshot.hasData) {
           _contents = snapshot.data;
           final prefs = Provider.of<SharedPreferences>(context);
-          return ListView.builder(
-            itemCount: _contents.length,
-            itemBuilder: (context, i) {
-              final finished = prefs?.getBool(_contents[i].path + ".finished") ?? false;
-              return ListTile(
-                leading: Icon(
-                  finished ? Icons.done : _icon(_contents[i]),
-                  size: 40,
-                ),
-                title: Text(path.basename(_contents[i].path)),
-                onTap: () {
-                  if (_contents[i] is Directory) {
-                    Navigator.push(context, CupertinoPageRoute(builder: (context) => FolderPage(_contents[i] as Directory)));
-                  } else {
-                    Navigator.push(context, MaterialPageRoute(builder: (context) {
-                      return Scaffold(
-                        appBar: AppBar(title: Text(path.basename(_contents[i].path))),
-                        endDrawer: Drawer(child: SettingsDrawer()),
-                        body: PlayerWidget(_contents[i]),
-                      );
-                    }));
-                  }
-                },
-              );
+          return new RefreshIndicator(
+            onRefresh: () async {
+              setState(() {
+                _contents = null;
+              });
             },
+            child: ListView.builder(
+              itemCount: _contents.length,
+              itemBuilder: (context, i) {
+                final finished = prefs?.getBool(_contents[i].path + ".finished") ?? false;
+                return ListTile(
+                  leading: Icon(
+                    finished ? Icons.done : _icon(_contents[i]),
+                    size: 40,
+                  ),
+                  title: Text(path.basename(_contents[i].path)),
+                  onTap: () {
+                    if (_contents[i] is Directory) {
+                      Navigator.push(context, CupertinoPageRoute(builder: (context) => FolderPage(_contents[i] as Directory)));
+                    } else {
+                      Navigator.push(context, MaterialPageRoute(builder: (context) {
+                        return Scaffold(
+                          appBar: AppBar(title: Text(path.basename(_contents[i].path))),
+                          endDrawer: Drawer(child: SettingsDrawer()),
+                          body: PlayerWidget(_contents[i]),
+                        );
+                      }));
+                    }
+                  },
+                );
+              },
+            ),
           );
         } else if (snapshot.hasError) {
           return ErrorWidget(snapshot.error.toString());
