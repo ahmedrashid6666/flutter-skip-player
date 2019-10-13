@@ -126,7 +126,7 @@ class PermissionPage extends StatelessWidget {
 class FolderPage extends StatefulWidget {
   final Directory directory;
   final bool home;
-  FolderPage(this.directory, {this.home = false});
+  FolderPage(this.directory, {this.home = false}) : super(key: ValueKey(directory.path));
 
   _FolderPageState createState() => _FolderPageState();
 }
@@ -167,34 +167,39 @@ class _FolderPageState extends State<FolderPage> {
     );
   }
 
+  List<FileSystemEntity> _contents;
+
   Widget _buildFileAndDirectoryList(Directory dir) {
+    var contentsFuture = _contents != null ? Future.value(_contents) : _listContents(dir);
+
     return FutureBuilder<List<FileSystemEntity>>(
-      future: _listContents(dir),
+      future: contentsFuture,
       builder: (BuildContext context, AsyncSnapshot<List<FileSystemEntity>> snapshot) {
         if (snapshot.hasData) {
-          final contents = snapshot.data;
+          _contents = snapshot.data;
           final prefs = Provider.of<SharedPreferences>(context);
           return ListView.builder(
-            itemCount: contents.length,
+            itemCount: _contents.length,
             itemBuilder: (context, i) {
-              final finished = prefs?.getBool(contents[i].path + ".finished") ?? false;
+              final finished = prefs?.getBool(_contents[i].path + ".finished") ?? false;
               return ListTile(
                 leading: Icon(
-                  finished ? Icons.done : _icon(contents[i]),
+                  finished ? Icons.done : _icon(_contents[i]),
                   size: 40,
                 ),
-                title: Text(path.basename(contents[i].path)),
+                title: Text(path.basename(_contents[i].path)),
                 onTap: () {
-                  if (contents[i] is Directory) {
-                    Navigator.push(context, CupertinoPageRoute(builder: (context) => FolderPage(contents[i] as Directory)));
+                  if (_contents[i] is Directory) {
+                    Navigator.push(context, CupertinoPageRoute(builder: (context) => FolderPage(_contents[i] as Directory)));
                   } else {
                     Navigator.push(context, MaterialPageRoute(builder: (context) {
                       return Scaffold(
-                          appBar: AppBar(title: Text(path.basename(contents[i].path))),
+                          appBar: AppBar(title: Text(path.basename(_contents[i].path))),
+                          endDrawer: Drawer(child: SettingsDrawer()),
                           body: Column(
                             children: <Widget>[
                               Expanded(flex: 1, child: Container()),
-                              PlayerWidget(contents[i]),
+                              PlayerWidget(_contents[i]),
                               Expanded(flex: 2, child: Container()),
                             ],
                           ));
@@ -242,12 +247,13 @@ class _FolderPageState extends State<FolderPage> {
     }).toList();
   }
 
+  static final RegExp _compareRegex = RegExp(r"(\D+)|(\d+)", caseSensitive: false);
   static int _compareFilenames(FileSystemEntity a, FileSystemEntity b) {
     final pathA = path.basename(a.path).toLowerCase();
     final pathB = path.basename(b.path).toLowerCase();
-    RegExp exp = new RegExp(r"(\D+)|(\d+)");
-    final matchesA = exp.allMatches(pathA).toList();
-    final matchesB = exp.allMatches(pathB).toList();
+
+    final matchesA = _compareRegex.allMatches(pathA).toList();
+    final matchesB = _compareRegex.allMatches(pathB).toList();
     for (int i = 0; i < matchesA.length && i < matchesB.length; i++) {
       final matchA = matchesA[i];
       final matchB = matchesB[i];
