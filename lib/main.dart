@@ -5,6 +5,7 @@ import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 import 'package:skip_player/player_widget.dart';
+import 'package:skip_player/prefs.dart';
 import 'package:path/path.dart' as path;
 import 'package:permission_handler/permission_handler.dart';
 import 'package:shared_preferences/shared_preferences.dart';
@@ -13,22 +14,14 @@ void main() => runApp(AppConfig());
 
 const String rootDir = "/storage/emulated/0";
 
-class Prefs extends ChangeNotifier {
-  bool _darkMode = true;
-  bool get darkMode => _darkMode;
-  set darkMode(bool newValue) {
-    if (newValue == _darkMode) return;
-    _darkMode = newValue;
-    notifyListeners();
-  }
-}
-
 class AppConfig extends StatefulWidget {
   _AppConfigState createState() => _AppConfigState();
 }
 
 class _AppConfigState extends State<AppConfig> {
-  final Prefs prefs = Prefs();
+  final DarkPref darkPref = DarkPref();
+  final CreateSilenceFilesPref createSilenceFilesPref = CreateSilenceFilesPref();
+
   final ValueNotifier<PermissionStatus> permissionNotifier = ValueNotifier(null);
   SharedPreferences sharedPrefs;
 
@@ -41,8 +34,8 @@ class _AppConfigState extends State<AppConfig> {
 
   void loadPrefs() async {
     sharedPrefs = await SharedPreferences.getInstance();
-    prefs.darkMode = sharedPrefs.getBool("darkMode") ?? false;
-    prefs.addListener(() => sharedPrefs.setBool("darkMode", prefs.darkMode));
+    darkPref.linkTo(sharedPrefs);
+    createSilenceFilesPref.linkTo(sharedPrefs);
     setState(() {});
   }
 
@@ -55,7 +48,8 @@ class _AppConfigState extends State<AppConfig> {
     return MultiProvider(
       providers: [
         Provider<SharedPreferences>.value(value: sharedPrefs),
-        ChangeNotifierProvider<Prefs>.value(value: prefs),
+        ChangeNotifierProvider<DarkPref>.value(value: darkPref),
+        ChangeNotifierProvider<CreateSilenceFilesPref>.value(value: createSilenceFilesPref),
         ChangeNotifierProvider<ValueNotifier<PermissionStatus>>.value(value: permissionNotifier),
       ],
       child: MyApp(),
@@ -66,10 +60,10 @@ class _AppConfigState extends State<AppConfig> {
 class MyApp extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final prefs = Provider.of<Prefs>(context);
+    final darkPref = Provider.of<DarkPref>(context);
     return MaterialApp(
       title: 'Skip Player',
-      theme: ThemeData(brightness: prefs.darkMode ? Brightness.dark : Brightness.light, primarySwatch: Colors.blue),
+      theme: ThemeData(brightness: darkPref.value ? Brightness.dark : Brightness.light, primarySwatch: Colors.blue),
       home: buildHome(context),
     );
   }
@@ -327,7 +321,9 @@ class ErrorWidget extends StatelessWidget {
 class SettingsDrawer extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
-    final prefs = Provider.of<Prefs>(context);
+    final darkPref = Provider.of<DarkPref>(context);
+    final createSilenceFilesPref = Provider.of<CreateSilenceFilesPref>(context);
+    
     return Column(
       mainAxisAlignment: MainAxisAlignment.start,
       crossAxisAlignment: CrossAxisAlignment.start,
@@ -348,8 +344,15 @@ class SettingsDrawer extends StatelessWidget {
               ListTile(
                 leading: Text("Dark Mode"),
                 trailing: Switch(
-                  value: prefs.darkMode,
-                  onChanged: (value) => prefs.darkMode = value,
+                  value: darkPref.value,
+                  onChanged: (value) => darkPref.value = value,
+                ),
+              ),
+              ListTile(
+                leading: Text("Save Computed Silences"),
+                trailing: Switch(
+                  value: createSilenceFilesPref.value,
+                  onChanged: (value) => createSilenceFilesPref.value = value,
                 ),
               ),
             ],

@@ -8,6 +8,7 @@ import 'package:path/path.dart' as path;
 import 'package:provider/provider.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 import 'package:path_provider/path_provider.dart' as pathprovider;
+import 'package:skip_player/prefs.dart';
 import 'package:skip_player/silence_analyzer.dart';
 import 'slider.dart';
 import 'silence.dart';
@@ -316,8 +317,10 @@ class _PlayerWidgetState extends State<PlayerWidget> {
       } catch (e) {
         _showErrorDialog(e);
       }
-      final json = jsonEncode(result);
-      silenceFile.writeAsString(json);
+      if (Provider.of<CreateSilenceFilesPref>(context, listen: false).value) {
+        final json = jsonEncode(result);
+        silenceFile.writeAsString(json);
+      }
     }
     if (result != null) {
       setState(() {
