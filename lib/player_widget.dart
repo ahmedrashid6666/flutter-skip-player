@@ -34,7 +34,6 @@ class _PlayerWidgetState extends State<PlayerWidget> {
   StreamSubscription _playerStateSubscription;
 
   bool get _isPlaying => _playerState == AudioPlayerState.PLAYING;
-  bool get _isPaused => _playerState == AudioPlayerState.PAUSED;
   String get _durationText => formatDuration(_duration);
   String get _positionText => formatDuration(_position);
   String formatDuration(Duration duration) => duration?.toString()?.split('.')?.first ?? '';
@@ -101,7 +100,8 @@ class _PlayerWidgetState extends State<PlayerWidget> {
           ),
         Expanded(flex: 10, child: Container()),
         Row(
-          mainAxisSize: MainAxisSize.min,
+          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+          mainAxisSize: MainAxisSize.max,
           children: [
             IconButton(
               padding: buttonPadding,
@@ -112,23 +112,9 @@ class _PlayerWidgetState extends State<PlayerWidget> {
             ),
             IconButton(
               padding: buttonPadding,
-              onPressed: _isPlaying ? null : _play,
+              onPressed: _isPlaying ? _audioPlayer.pause : _play,
               iconSize: 64.0,
-              icon: Icon(Icons.play_arrow),
-              color: Colors.blue,
-            ),
-            IconButton(
-              padding: buttonPadding,
-              onPressed: _isPlaying ? _audioPlayer.pause : null,
-              iconSize: 64.0,
-              icon: Icon(Icons.pause),
-              color: Colors.blue,
-            ),
-            IconButton(
-              padding: buttonPadding,
-              onPressed: _isPlaying || _isPaused ? _audioPlayer.stop : null,
-              iconSize: 64.0,
-              icon: Icon(Icons.stop),
+              icon: Icon(_isPlaying ? Icons.pause_circle_outline : Icons.play_circle_outline),
               color: Colors.blue,
             ),
             IconButton(
@@ -136,10 +122,11 @@ class _PlayerWidgetState extends State<PlayerWidget> {
               onPressed: _skipForward,
               iconSize: 45.0,
               icon: Transform(
-                  transform: Matrix4.identity()
-                    ..translate(45.0, 0.0, 0.0)
-                    ..scale(-1.0, 1.0, 1.0),
-                  child: Icon(Icons.settings_backup_restore)),
+                // flip horizontally
+                alignment: AlignmentDirectional.center,
+                transform: Matrix4.identity()..scale(-1.0, 1.0, 1.0),
+                child: Icon(Icons.settings_backup_restore),
+              ),
               color: Colors.blue,
             ),
           ],
