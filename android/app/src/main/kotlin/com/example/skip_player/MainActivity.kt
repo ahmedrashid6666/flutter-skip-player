@@ -1,4 +1,4 @@
-package com.example.skip_player
+package nbros.skip_player
 
 import android.os.Bundle
 
