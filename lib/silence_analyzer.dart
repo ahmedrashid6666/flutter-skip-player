@@ -25,7 +25,7 @@ class AnalyzerParams {
   SendPort sendResultPort;
   SendPort sendProgressPort;
   double bitrate;
-  String rawAudioTempFilePath;
+  Uint8List rawAudioBytes;
   AnalyzerParams({
     this.tempDirPath,
     this.silenceThresholdDecibel,
@@ -33,18 +33,15 @@ class AnalyzerParams {
     this.sendResultPort,
     this.sendProgressPort,
     this.bitrate,
-    this.rawAudioTempFilePath,
+    this.rawAudioBytes,
   });
 }
 
-void readPipe(pipeName) async {
-  var file = File(pipeName);
-  var stream = file.openRead();
-  stream.listen((e) {
-    print(e.length.toString() + "\n");
-  }, onError: (e){
-    print(e);
-  });
+Future<Uint8List> readPipe(pipeName) async {
+  var pipe = File(pipeName);
+  var result = await pipe.readAsBytes();
+  await pipe.delete();
+  return result;
 }
 
 /// Analyzes the given audio file and returns the list of silence ranges found in it.
@@ -93,9 +90,7 @@ Future<List<Silence>> analyzeSilences(
   //String tempFilePath = path.join(tempDirPath, path.basename(audioFilePath) + ".pcm_s16le");
   var arguments = ["-y", "-i", audioFilePath, "-f", "s16le", "-ac", "1", "-c:a", "pcm_s16le", pipeName];
 
-  compute(readPipe, pipeName);
-
-  await Future.delayed(Duration(seconds: 1));
+  var futureBytes = compute(readPipe, pipeName);
 
   int rc = await ffmpeg.executeWithArguments(arguments);
   var output = await ffmpeg.getLastCommandOutput();
@@ -112,6 +107,9 @@ Future<List<Silence>> analyzeSilences(
   ReceivePort receiveResultPort = ReceivePort();
   ReceivePort receiveProgressPort = ReceivePort();
 
+  var bytes = await futureBytes;
+  print("Got ${bytes.length} raw audio bytes");
+
   final params = AnalyzerParams(
     tempDirPath: tempDirPath,
     silenceThresholdDecibel: silenceThresholdDecibel,
@@ -119,7 +117,7 @@ Future<List<Silence>> analyzeSilences(
     sendResultPort: receiveResultPort.sendPort,
     sendProgressPort: progressCallback != null ? receiveProgressPort.sendPort : null,
     bitrate: bitrate,
-    rawAudioTempFilePath: pipeName,
+    rawAudioBytes: bytes,
   );
 
   if (progressCallback != null) {
@@ -171,12 +169,8 @@ void _doAnalyzeSilences(AnalyzerParams analyzerParams) async {
   // number of samples (16 bits each) per second
   int samplesPerSecond = analyzerParams.bitrate * 1000.0 ~/ 16;
 
-  var file = File(analyzerParams.rawAudioTempFilePath);
-  var stream = file.openRead();
-  stream.forEach((e) => print("value: " + e.toString() + "\n"));
-
-  var bytes = await new File(analyzerParams.rawAudioTempFilePath).readAsBytes();
-  File(analyzerParams.rawAudioTempFilePath).delete();
+  //var bytes = await new File(analyzerParams.rawAudioTempFilePath).readAsBytes();
+  //File(analyzerParams.rawAudioTempFilePath).delete();
 
   //int durationMs = bytes.length * 8 ~/ analyzerParams.bitrate;
   //var dur = Duration(milliseconds: durationMs);
@@ -187,6 +181,8 @@ void _doAnalyzeSilences(AnalyzerParams analyzerParams) async {
   // print(dur2);
 
   int window = samplesPerSecond ~/ 100;
+
+  var bytes = analyzerParams.rawAudioBytes;
 
   ByteData byteData = bytes.buffer.asByteData();
 
