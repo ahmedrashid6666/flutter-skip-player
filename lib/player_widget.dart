@@ -285,12 +285,15 @@ class _PlayerWidgetState extends State<PlayerWidget> {
     List<Silence> result;
     final silenceFile = File(silenceFilePath);
     if (await silenceFile.exists()) {
-      result = List();
       List jsonSilenceList = jsonDecode(await silenceFile.readAsString());
-      for (var jsonSilence in jsonSilenceList) {
-        result.add(Silence.fromJson(jsonSilence));
+      if (jsonSilenceList != null) {
+        result = List();
+        for (var jsonSilence in jsonSilenceList) {
+          result.add(Silence.fromJson(jsonSilence));
+        }
       }
-    } else {
+    }
+    if (result == null) {
       Directory tempDir = await pathprovider.getTemporaryDirectory();
       try {
         result = await analyzeSilences(

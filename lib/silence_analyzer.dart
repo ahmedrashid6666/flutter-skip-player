@@ -40,7 +40,6 @@ class AnalyzerParams {
 Future<Uint8List> readPipe(pipeName) async {
   var pipe = File(pipeName);
   var result = await pipe.readAsBytes();
-  await pipe.delete();
   return result;
 }
 
