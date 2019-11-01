@@ -1,0 +1,1 @@
+magick mogrify -resize 50% -path screenshots screenshots-big/*.png

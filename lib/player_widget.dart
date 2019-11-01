@@ -170,7 +170,9 @@ class _PlayerWidgetState extends State<PlayerWidget> {
                 setState(() {
                   playedSilences = allSilences = List();
                 });
-                await silenceFile.delete();
+                if (await silenceFile.exists()) {
+                  await silenceFile.delete();
+                }
                 _readSilences();
               },
               color: Theme.of(context).buttonColor,

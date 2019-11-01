@@ -5,7 +5,9 @@ import 'package:shared_preferences/shared_preferences.dart';
 abstract class BoolPref extends ChangeNotifier {
   final String name;
   final bool defaultValue;
-  BoolPref({@required this.name, this.defaultValue});
+  BoolPref({@required this.name, this.defaultValue}) {
+    this._value = defaultValue;
+  }
 
   bool _value;
   bool get value => _value;
