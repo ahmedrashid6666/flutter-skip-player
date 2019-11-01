@@ -37,6 +37,16 @@ class AnalyzerParams {
   });
 }
 
+void readPipe(pipeName) async {
+  var file = File(pipeName);
+  var stream = file.openRead();
+  stream.listen((e) {
+    print(e.length.toString() + "\n");
+  }, onError: (e){
+    print(e);
+  });
+}
+
 /// Analyzes the given audio file and returns the list of silence ranges found in it.
 /// [audioFilePath] the audio file to analyze
 /// [tempDirPath] is a directory in which the decoded raw version of the audio file will be written.
@@ -79,8 +89,14 @@ Future<List<Silence>> analyzeSilences(
   // convert the MP3 to mono raw audio samples (s16le = PCM signed 16-bit little-endian)
   // cf https://trac.ffmpeg.org/wiki/audio%20types
   // (on the main thread since native calls only work from the main thread)
-  String tempFilePath = path.join(tempDirPath, path.basename(audioFilePath) + ".pcm_s16le");
-  var arguments = ["-y", "-i", audioFilePath, "-f", "s16le", "-ac", "1", "-c:a", "pcm_s16le", tempFilePath];
+  String pipeName = await ffmpeg.registerNewFFmpegPipe();
+  //String tempFilePath = path.join(tempDirPath, path.basename(audioFilePath) + ".pcm_s16le");
+  var arguments = ["-y", "-i", audioFilePath, "-f", "s16le", "-ac", "1", "-c:a", "pcm_s16le", pipeName];
+
+  compute(readPipe, pipeName);
+
+  await Future.delayed(Duration(seconds: 1));
+
   int rc = await ffmpeg.executeWithArguments(arguments);
   var output = await ffmpeg.getLastCommandOutput();
   var stats = await ffmpeg.getLastReceivedStatistics();
@@ -103,7 +119,7 @@ Future<List<Silence>> analyzeSilences(
     sendResultPort: receiveResultPort.sendPort,
     sendProgressPort: progressCallback != null ? receiveProgressPort.sendPort : null,
     bitrate: bitrate,
-    rawAudioTempFilePath: tempFilePath,
+    rawAudioTempFilePath: pipeName,
   );
 
   if (progressCallback != null) {
@@ -154,6 +170,10 @@ void _doAnalyzeSilences(AnalyzerParams analyzerParams) async {
 
   // number of samples (16 bits each) per second
   int samplesPerSecond = analyzerParams.bitrate * 1000.0 ~/ 16;
+
+  var file = File(analyzerParams.rawAudioTempFilePath);
+  var stream = file.openRead();
+  stream.forEach((e) => print("value: " + e.toString() + "\n"));
 
   var bytes = await new File(analyzerParams.rawAudioTempFilePath).readAsBytes();
   File(analyzerParams.rawAudioTempFilePath).delete();
