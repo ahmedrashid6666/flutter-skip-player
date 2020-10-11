@@ -3,7 +3,7 @@ import 'dart:io';
 import 'package:flutter/cupertino.dart';
 import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
-import 'package:provider/provider.dart';
+import 'package:provider/provider.dart' hide BuildContext;
 import 'package:skip_player/player_widget.dart';
 import 'package:skip_player/prefs.dart';
 import 'package:path/path.dart' as path;
@@ -333,7 +333,7 @@ class SettingsDrawer extends StatelessWidget {
           child: DrawerHeader(
             child: Text(
               'Settings',
-              style: Theme.of(context).textTheme.display1,
+              style: Theme.of(context).textTheme.headline4,
             ),
           ),
         ),

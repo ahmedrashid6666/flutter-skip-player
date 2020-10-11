@@ -67,17 +67,22 @@ class RectSliderThumbShape extends SliderComponentShape {
   Size getPreferredSize(bool isEnabled, bool isDiscrete) {
     return Size.fromWidth(3);
   }
-
+  
   @override
-  void paint(PaintingContext context, Offset center,
-      {Animation<double> activationAnimation,
-      @required Animation<double> enableAnimation,
-      bool isDiscrete,
-      TextPainter labelPainter,
-      RenderBox parentBox,
-      @required SliderThemeData sliderTheme,
-      TextDirection textDirection,
-      double value}) {
+  void paint(
+    PaintingContext context,
+    Offset center, {
+    Animation<double> activationAnimation,
+    Animation<double> enableAnimation,
+    bool isDiscrete,
+    TextPainter labelPainter,
+    RenderBox parentBox,
+    SliderThemeData sliderTheme,
+    TextDirection textDirection,
+    double value,
+    double textScaleFactor,
+    Size sizeWithOverflow,
+  }) {
     context.canvas.drawRRect(
       RRect.fromRectAndRadius(
         Rect.fromCenter(center: center, width: 3, height: 50),

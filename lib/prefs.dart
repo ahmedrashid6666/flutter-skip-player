@@ -27,7 +27,7 @@ abstract class BoolPref extends ChangeNotifier {
 
 /// preference for dark theme or light theme
 class DarkPref extends BoolPref {
-  DarkPref() : super(name: "darkMode", defaultValue: false);
+  DarkPref() : super(name: "darkMode", defaultValue: true);
 }
 
 /// preference for caching computed silences in .silence files next to the audio file

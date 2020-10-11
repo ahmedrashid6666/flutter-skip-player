@@ -7,7 +7,6 @@ import 'dart:typed_data';
 
 import 'package:flutter/foundation.dart';
 import 'package:flutter_ffmpeg/flutter_ffmpeg.dart';
-import 'package:path/path.dart' as path;
 import 'package:skip_player/silence.dart';
 
 class AnalysisException implements Exception {
@@ -59,6 +58,7 @@ Future<List<Silence>> analyzeSilences(
   assert(silenceThresholdMs > 0);
 
   final ffmpeg = FlutterFFmpeg();
+  final FlutterFFmpegConfig ffmpegConfig = new FlutterFFmpegConfig();
   final RegExp _durationRegex = RegExp(r"Duration:\s*(\d+):(\d+):(\d+)\.(\d+)");
   final RegExp _progressRegex = RegExp(r"time=(\d+):(\d+):(\d+)\.(\d+) bitrate=");
   StreamController<String> streamController;
@@ -77,23 +77,23 @@ Future<List<Silence>> analyzeSilences(
       }
     });
     // redirect ffmpeg log to a stream that emits full lines for easy parsing
-    ffmpeg.enableLogCallback((level, string) {
-      streamController.add(string);
+    ffmpegConfig.enableLogCallback((log) {
+      streamController.add("${log.level} ${log.message}");
     });
   }
 
   // convert the MP3 to mono raw audio samples (s16le = PCM signed 16-bit little-endian)
   // cf https://trac.ffmpeg.org/wiki/audio%20types
   // (on the main thread since native calls only work from the main thread)
-  String pipeName = await ffmpeg.registerNewFFmpegPipe();
+  String pipeName = await ffmpegConfig.registerNewFFmpegPipe();
   //String tempFilePath = path.join(tempDirPath, path.basename(audioFilePath) + ".pcm_s16le");
   var arguments = ["-y", "-i", audioFilePath, "-f", "s16le", "-ac", "1", "-c:a", "pcm_s16le", pipeName];
 
   var futureBytes = compute(readPipe, pipeName);
 
   int rc = await ffmpeg.executeWithArguments(arguments);
-  var output = await ffmpeg.getLastCommandOutput();
-  var stats = await ffmpeg.getLastReceivedStatistics();
+  var output = await ffmpegConfig.getLastCommandOutput();
+  var stats = await ffmpegConfig.getLastReceivedStatistics();
   streamController?.close();
 
   if (rc != 0) {
@@ -101,7 +101,7 @@ Future<List<Silence>> analyzeSilences(
   }
 
   // kbits / sample
-  double bitrate = stats["bitrate"];
+  double bitrate = stats.bitrate;
 
   ReceivePort receiveResultPort = ReceivePort();
   ReceivePort receiveProgressPort = ReceivePort();
